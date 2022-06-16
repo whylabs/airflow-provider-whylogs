@@ -4,12 +4,44 @@ import pandas as pd
 from airflow.models.dag import DAG
 from airflow.operators.python import PythonOperator
 
-from whylogs_operator.whylogs_operator import (
-    WhylogsSummaryDriftOperator,
-    WhylogsConstraintsOperator,
-    greater_than_number,
-    mean_between_range
-)
+from whylogs.core.constraints import MetricConstraint, MetricsSelector
+from whylogs_operator.whylogs_operator import WhylogsSummaryDriftOperator, WhylogsConstraintsOperator
+
+
+def greater_than_number(column_name, number):
+    selector = MetricsSelector(metric_name='distribution', column_name=column_name)
+    constraint_name = f"{column_name} greater than {number}"
+
+    constraint = MetricConstraint(
+            name=constraint_name,
+            condition=lambda x: x.min > number,
+            metric_selector=selector
+    )
+    return constraint
+
+
+def smaller_than_number(column_name, number):
+    selector = MetricsSelector(metric_name='distribution', column_name=column_name)
+    constraint_name = f"{column_name} smaller than {number}"
+
+    constraint = MetricConstraint(
+            name=constraint_name,
+            condition=lambda x: x.min < number,
+            metric_selector=selector
+    )
+    return constraint
+
+
+def mean_between_range(column_name, lower_bound, upper_bound):
+    selector = MetricsSelector(metric_name='distribution', column_name=column_name)
+    constraint_name = f"{column_name} greater than {lower_bound} and smaller than {upper_bound}"
+
+    constraint = MetricConstraint(
+            name=constraint_name,
+            condition=lambda x: lower_bound <= x.avg <= upper_bound,
+            metric_selector=selector
+    )
+    return constraint
 
 
 def my_transformation(input_path="data/raw_data.csv"):
@@ -33,10 +65,13 @@ with DAG(
 
     greater_than_check_a = WhylogsConstraintsOperator(
         task_id="greater_than_check_a",
-        data_path="data/parquet_example",
-        constraint=greater_than_number(column_name="col_1", number=0),
-        data_format="parquet",
-        columns=["col_1"]
+        data_path="data/raw_data.csv", # "s3://test-airflow-operator/raw_data.csv",
+        constraint=greater_than_number(column_name="a", number=0),
+        data_format="csv",
+        # aws_credentials={
+        #     "key": "my_access_key_id",
+        #     "secret": "my_access_key"
+        # }
     )
     greater_than_check_b = WhylogsConstraintsOperator(
         task_id="greater_than_check_b",

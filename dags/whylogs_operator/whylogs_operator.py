@@ -8,55 +8,30 @@ from airflow.models import BaseOperator
 import whylogs as why
 from whylogs import DatasetProfileView
 from whylogs.viz import NotebookProfileVisualizer
-from whylogs.core.constraints import ConstraintsBuilder, MetricsSelector, MetricConstraint
+from whylogs.core.constraints import ConstraintsBuilder, MetricConstraint
 
 
-def _get_profile_view(data_format: str, data_path: str, columns: Optional[str] = None) -> Optional[DatasetProfileView]:
+def _get_profile_view(
+    data_format: str, 
+    data_path: str, 
+    columns: Optional[str] = None, 
+    credentials: Optional[dict] = None
+) -> Optional[DatasetProfileView]:
     if data_format == "csv":
-        dataframe = pd.read_csv(data_path)
+        dataframe = pd.read_csv(data_path, storage_options=credentials)
         return why.log(dataframe).view()
     elif data_format == "parquet":
         data_dir = Path(data_path)
-        profile_list = [why.log(pd.read_parquet(path, columns=columns)).view() for path in data_dir.glob("*.parquet")]
+        profile_list = [
+            why.log(pd.read_parquet(
+                path, 
+                columns=columns, 
+                storage_options=credentials
+                )).view() for path in data_dir.glob("*.parquet")
+            ]
         return reduce((lambda x, y: x.merge(y)), profile_list)
     else:
         return None
-
-
-def greater_than_number(column_name, number):
-    selector = MetricsSelector(metric_name='distribution', column_name=column_name)
-    constraint_name = f"{column_name} greater than {number}"
-
-    constraint = MetricConstraint(
-            name=constraint_name,
-            condition=lambda x: x.min > number,
-            metric_selector=selector
-    )
-    return constraint
-
-
-def smaller_than_number(column_name, number):
-    selector = MetricsSelector(metric_name='distribution', column_name=column_name)
-    constraint_name = f"{column_name} smaller than {number}"
-
-    constraint = MetricConstraint(
-            name=constraint_name,
-            condition=lambda x: x.min < number,
-            metric_selector=selector
-    )
-    return constraint
-
-
-def mean_between_range(column_name, lower_bound, upper_bound):
-    selector = MetricsSelector(metric_name='distribution', column_name=column_name)
-    constraint_name = f"{column_name} greater than {lower_bound} and smaller than {upper_bound}"
-
-    constraint = MetricConstraint(
-            name=constraint_name,
-            condition=lambda x: lower_bound <= x.avg <= upper_bound,
-            metric_selector=selector
-    )
-    return constraint
 
 
 class WhylogsSummaryDriftOperator(BaseOperator):
@@ -68,6 +43,7 @@ class WhylogsSummaryDriftOperator(BaseOperator):
             reference_data_path: str,
             data_format: Optional[str] = "csv",
             columns: Optional[List[str]] = None,
+            aws_credentials: Optional[dict] = None,
             **kwargs
     ):
         super().__init__(**kwargs)
@@ -75,6 +51,7 @@ class WhylogsSummaryDriftOperator(BaseOperator):
         self.target_data_path = target_data_path
         self.reference_data_path = reference_data_path
         self.columns = columns
+        self.aws_credentials = aws_credentials
         self.data_format = data_format if data_format in ["csv", "parquet"] else None
         if not self.data_format:
             raise AirflowFailException("Set a valid data_format! Currently accepted formats are ['csv', 'parquet']")
@@ -92,10 +69,12 @@ class WhylogsSummaryDriftOperator(BaseOperator):
         visualization = self._set_profile_visualization(
             prof_view=_get_profile_view(data_format=self.data_format,
                                         data_path=self.target_data_path,
-                                        columns=self.columns),
+                                        columns=self.columns,
+                                        credentials=self.aws_credentials),
             prof_view_ref=_get_profile_view(data_format=self.data_format,
                                             data_path=self.reference_data_path,
-                                            columns=self.columns)
+                                            columns=self.columns,
+                                            credentials=self.aws_credentials)
         )
         visualization.write(
             rendered_html=visualization.summary_drift_report(),
@@ -111,6 +90,7 @@ class WhylogsConstraintsOperator(BaseOperator):
             constraint: MetricConstraint,
             data_format: Optional[str] = None,
             columns: Optional[List[str]] = None,
+            aws_credentials: Optional[dict] = None,
             **kwargs
     ):
         super().__init__(**kwargs)
@@ -118,12 +98,14 @@ class WhylogsConstraintsOperator(BaseOperator):
         self.constraint = constraint
         self.data_format = data_format or "csv"
         self.columns = columns
+        self.aws_credentials = aws_credentials
 
     def execute(self, **kwargs):
         profile_view = _get_profile_view(
             data_format=self.data_format,
             data_path=self.data_path,
-            columns=self.columns
+            columns=self.columns,
+            credentials=self.aws_credentials
         )
         builder = ConstraintsBuilder(profile_view)
         builder.add_constraint(self.constraint)
