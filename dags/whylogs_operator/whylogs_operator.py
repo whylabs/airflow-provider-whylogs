@@ -1,4 +1,6 @@
-from typing import Any, Optional
+from functools import reduce
+from pathlib import Path
+from typing import Any, Optional, List
 
 import pandas as pd
 from airflow.exceptions import AirflowFailException
@@ -6,6 +8,55 @@ from airflow.models import BaseOperator
 import whylogs as why
 from whylogs import DatasetProfileView
 from whylogs.viz import NotebookProfileVisualizer
+from whylogs.core.constraints import ConstraintsBuilder, MetricsSelector, MetricConstraint
+
+
+def _get_profile_view(data_format: str, data_path: str, columns: Optional[str] = None) -> Optional[DatasetProfileView]:
+    if data_format == "csv":
+        dataframe = pd.read_csv(data_path)
+        return why.log(dataframe).view()
+    elif data_format == "parquet":
+        data_dir = Path(data_path)
+        profile_list = [why.log(pd.read_parquet(path, columns=columns)).view() for path in data_dir.glob("*.parquet")]
+        return reduce((lambda x, y: x.merge(y)), profile_list)
+    else:
+        return None
+
+
+def greater_than_number(column_name, number):
+    selector = MetricsSelector(metric_name='distribution', column_name=column_name)
+    constraint_name = f"{column_name} greater than {number}"
+
+    constraint = MetricConstraint(
+            name=constraint_name,
+            condition=lambda x: x.min > number,
+            metric_selector=selector
+    )
+    return constraint
+
+
+def smaller_than_number(column_name, number):
+    selector = MetricsSelector(metric_name='distribution', column_name=column_name)
+    constraint_name = f"{column_name} smaller than {number}"
+
+    constraint = MetricConstraint(
+            name=constraint_name,
+            condition=lambda x: x.min < number,
+            metric_selector=selector
+    )
+    return constraint
+
+
+def mean_between_range(column_name, lower_bound, upper_bound):
+    selector = MetricsSelector(metric_name='distribution', column_name=column_name)
+    constraint_name = f"{column_name} greater than {lower_bound} and smaller than {upper_bound}"
+
+    constraint = MetricConstraint(
+            name=constraint_name,
+            condition=lambda x: lower_bound <= x.avg <= upper_bound,
+            metric_selector=selector
+    )
+    return constraint
 
 
 class WhylogsSummaryDriftOperator(BaseOperator):
@@ -16,24 +67,17 @@ class WhylogsSummaryDriftOperator(BaseOperator):
             target_data_path: str,
             reference_data_path: str,
             data_format: Optional[str] = "csv",
+            columns: Optional[List[str]] = None,
             **kwargs
     ):
         super().__init__(**kwargs)
         self.report_html_path = report_html_path
         self.target_data_path = target_data_path
         self.reference_data_path = reference_data_path
+        self.columns = columns
         self.data_format = data_format if data_format in ["csv", "parquet"] else None
         if not self.data_format:
             raise AirflowFailException("Set a valid data_format! Currently accepted formats are ['csv', 'parquet']")
-
-    def _get_profile_view(self, data_path: str):
-        if self.data_format == "csv":
-            dataframe = pd.read_csv(data_path)
-        elif self.data_format == "parquet":
-            dataframe = pd.read_parquet(data_path)
-        else:
-            return None
-        return why.log(dataframe).view()
 
     @staticmethod
     def _set_profile_visualization(
@@ -46,8 +90,12 @@ class WhylogsSummaryDriftOperator(BaseOperator):
 
     def execute(self, **kwargs) -> Any:
         visualization = self._set_profile_visualization(
-            prof_view=self._get_profile_view(self.target_data_path),
-            prof_view_ref=self._get_profile_view(self.reference_data_path)
+            prof_view=_get_profile_view(data_format=self.data_format,
+                                        data_path=self.target_data_path,
+                                        columns=self.columns),
+            prof_view_ref=_get_profile_view(data_format=self.data_format,
+                                            data_path=self.reference_data_path,
+                                            columns=self.columns)
         )
         visualization.write(
             rendered_html=visualization.summary_drift_report(),
@@ -55,13 +103,35 @@ class WhylogsSummaryDriftOperator(BaseOperator):
         )
 
 
-# TODO implement operator that will raise an AirflowException if the constraint reqs are not met or return success
 class WhylogsConstraintsOperator(BaseOperator):
-    def __init__(self, *, columns, data_path, constraints, **kwargs):
+    def __init__(
+            self,
+            *,
+            data_path: str,
+            constraint: MetricConstraint,
+            data_format: Optional[str] = None,
+            columns: Optional[List[str]] = None,
+            **kwargs
+    ):
         super().__init__(**kwargs)
-        self.columns = columns,
-        self.data_path = data_path,
-        self.constraints = constraints
+        self.data_path = data_path
+        self.constraint = constraint
+        self.data_format = data_format or "csv"
+        self.columns = columns
 
-    def execute(self, **kwargs) -> bool:
-        pass
+    def execute(self, **kwargs):
+        profile_view = _get_profile_view(
+            data_format=self.data_format,
+            data_path=self.data_path,
+            columns=self.columns
+        )
+        builder = ConstraintsBuilder(profile_view)
+        builder.add_constraint(self.constraint)
+        constraints = builder.build()
+
+        result: bool = constraints.validate()
+        if result is False:
+            print(constraints.report())
+            raise AirflowFailException("Constraints didn't meet the criteria")
+        else:
+            return constraints.report()
