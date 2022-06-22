@@ -1,11 +1,13 @@
+import os
 from datetime import datetime
+import logging
 
 import pandas as pd
 from airflow.models.dag import DAG
 from airflow.operators.python import PythonOperator
 
 from whylogs.core.constraints import MetricConstraint, MetricsSelector
-from whylogs_operator.whylogs_operator import WhylogsSummaryDriftOperator, WhylogsConstraintsOperator
+from operators.whylogs import WhylogsSummaryDriftOperator, WhylogsConstraintsOperator
 
 
 def greater_than_number(column_name, number):
@@ -45,6 +47,7 @@ def mean_between_range(column_name, lower_bound, upper_bound):
 
 
 def my_transformation(input_path="data/raw_data.csv"):
+    logging.info(f"Current wd is {os.getcwd()}")
     input_data = pd.read_csv(input_path)
     clean_df = input_data.dropna(axis=0)
     clean_df.to_csv("data/transformed_data.csv")
@@ -65,7 +68,7 @@ with DAG(
 
     greater_than_check_a = WhylogsConstraintsOperator(
         task_id="greater_than_check_a",
-        data_path="data/raw_data.csv", # "s3://test-airflow-operator/raw_data.csv",
+        data_path="data/raw_data.csv",  # "s3://test-airflow-operator/raw_data.csv",
         constraint=greater_than_number(column_name="a", number=0),
         data_format="csv",
         # aws_credentials={
