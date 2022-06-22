@@ -106,7 +106,7 @@ class WhylogsConstraintsOperator(BaseOperator):
             *,
             data_path: str,
             constraint: MetricConstraint,
-            level: Optional[str] = "break",
+            break_pipeline: Optional[bool] = True,
             data_format: Optional[str] = None,
             columns: Optional[List[str]] = None,
             aws_credentials: Optional[dict] = None,
@@ -117,10 +117,10 @@ class WhylogsConstraintsOperator(BaseOperator):
         self.constraint = constraint
         self.data_format = data_format or "csv"
         self.columns = columns
-        self.level = level
+        self.break_pipeline = break_pipeline
         self.aws_credentials = aws_credentials
 
-    def execute(self, **kwargs):
+    def execute(self, **kwargs) -> None:
         profile_view = _get_profile_view(
             data_format=self.data_format,
             data_path=self.data_path,
@@ -132,8 +132,11 @@ class WhylogsConstraintsOperator(BaseOperator):
         constraints = builder.build()
 
         result: bool = constraints.validate()
-        if result is False:
-            print(constraints.report())
+        if result is False and self.break_pipeline:
+            self.log.error(constraints.report())
             raise AirflowFailException("Constraints didn't meet the criteria")
+        elif result is False and not self.break_pipeline:
+            self.log.warning(constraints.report())
         else:
-            return constraints.report()
+            self.log.info(constraints.report())
+        return constraints.validate()

@@ -53,6 +53,12 @@ def my_transformation(input_path="data/raw_data.csv"):
     clean_df.to_csv("data/transformed_data.csv")
 
 
+def pull_args(**kwargs):
+    ti = kwargs['ti']
+    ls = ti.xcom_pull(task_ids='greater_than_check_a')
+    logging.info(ls)
+    return ls
+
 with DAG(
         dag_id='whylabs_example_dag',
         schedule_interval=None,
@@ -87,7 +93,8 @@ with DAG(
     avg_between_b = WhylogsConstraintsOperator(
         task_id="avg_between_b",
         data_path="data/parquet_example",
-        constraint=mean_between_range(column_name="col_2", lower_bound=0.0, upper_bound=125126123621.0),
+        break_pipeline=False,
+        constraint=mean_between_range(column_name="col_2", lower_bound=0.0, upper_bound=125.1261236210),
         data_format="parquet",
         columns=["col_2"]
     )
@@ -99,4 +106,12 @@ with DAG(
         reference_data_path="data/transformed_data.csv"
     )
 
-    my_transformation >> [greater_than_check_a, greater_than_check_b, avg_between_b] >> summary_drift
+    python_print = PythonOperator(
+        task_id = "python_print",
+        python_callable=pull_args,
+        provide_context=True,
+    )
+
+    my_transformation >> [greater_than_check_a, greater_than_check_b, avg_between_b]
+    greater_than_check_a >> python_print
+    [greater_than_check_a, greater_than_check_b, avg_between_b] >> summary_drift
