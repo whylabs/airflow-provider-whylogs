@@ -5,9 +5,11 @@ import logging
 import pandas as pd
 from airflow.models.dag import DAG
 from airflow.operators.python import PythonOperator
-
-from whylogs.core.constraints import MetricConstraint, MetricsSelector
-from operators.whylogs import WhylogsSummaryDriftOperator, WhylogsConstraintsOperator
+import whylogs as why
+from whylogs.core.constraints import MetricConstraint, MetricsSelector, ConstraintsBuilder
+from operators.whylogs import (
+    WhylogsSummaryDriftOperator, WhylogsConstraintsOperator, WhylogsCustomConstraintsOperator
+)
 
 
 def greater_than_number(column_name, number):
@@ -44,6 +46,25 @@ def mean_between_range(column_name, lower_bound, upper_bound):
             metric_selector=selector
     )
     return constraint
+
+
+def mean_between_range_custom(data_path, column_name, lower_bound, upper_bound):
+    df = pd.read_csv(data_path)
+    profile_view = why.log(pandas=df).view()
+
+    selector = MetricsSelector(metric_name='distribution', column_name=column_name)
+    constraint_name = f"{column_name} greater than {lower_bound} and smaller than {upper_bound}"
+
+    constraint = MetricConstraint(
+            name=constraint_name,
+            condition=lambda x: lower_bound <= x.avg <= upper_bound,
+            metric_selector=selector
+    )
+    
+    builder = ConstraintsBuilder(profile_view)
+    builder.add_constraint(constraint)
+    constraints = builder.build()
+    return constraints
 
 
 def my_transformation(input_path="data/raw_data.csv"):
@@ -99,6 +120,17 @@ with DAG(
         columns=["col_2"]
     )
 
+    mean_custom = WhylogsCustomConstraintsOperator(
+        task_id="mean_custom",
+        constraints=mean_between_range_custom(
+            data_path="data/raw_data.csv", 
+            column_name="a",
+            lower_bound=0.0,
+            upper_bound=10.3
+        ),
+        break_pipeline=False
+    )
+
     summary_drift = WhylogsSummaryDriftOperator(
         task_id="drift_report",
         report_html_path="data/example_drift_report",
@@ -112,6 +144,6 @@ with DAG(
         provide_context=True,
     )
 
-    my_transformation >> [greater_than_check_a, greater_than_check_b, avg_between_b]
+    my_transformation >> [greater_than_check_a, greater_than_check_b, avg_between_b, mean_custom]
     greater_than_check_a >> python_print
     [greater_than_check_a, greater_than_check_b, avg_between_b] >> summary_drift

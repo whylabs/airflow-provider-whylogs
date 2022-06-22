@@ -26,7 +26,7 @@ from airflow.models import BaseOperator
 import whylogs as why
 from whylogs import DatasetProfileView
 from whylogs.viz import NotebookProfileVisualizer
-from whylogs.core.constraints import ConstraintsBuilder, MetricConstraint
+from whylogs.core.constraints import ConstraintsBuilder, MetricConstraint, Constraints
 
 
 def _get_profile_view(
@@ -139,4 +139,29 @@ class WhylogsConstraintsOperator(BaseOperator):
             self.log.warning(constraints.report())
         else:
             self.log.info(constraints.report())
-        return constraints.validate()
+        return result
+
+
+
+class WhylogsCustomConstraintsOperator(BaseOperator):
+    def __init__(
+            self,
+            *,
+            constraints: Constraints,
+            break_pipeline: Optional[bool] = True,
+            **kwargs
+    ):
+        super().__init__(**kwargs)
+        self.constraints = constraints
+        self.break_pipeline = break_pipeline
+
+    def execute(self, **kwargs) -> None:
+        result: bool = self.constraints.validate()
+        if result is False and self.break_pipeline:
+            self.log.error(self.constraints.report())
+            raise AirflowFailException("Constraints didn't meet the criteria")
+        elif result is False and not self.break_pipeline:
+            self.log.warning(self.constraints.report())
+        else:
+            self.log.info(self.constraints.report())
+        return result
