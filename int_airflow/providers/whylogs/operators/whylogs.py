@@ -29,7 +29,8 @@ from whylogs.viz import NotebookProfileVisualizer
 from whylogs.core.constraints import ConstraintsBuilder, MetricConstraint, Constraints
 
 
-def _get_profile_view(
+
+def _get_profile_results(
     data_format: str, 
     data_path: str, 
     columns: Optional[str] = None, 
@@ -37,7 +38,7 @@ def _get_profile_view(
 ) -> Optional[DatasetProfileView]:
     if data_format == "csv":
         dataframe = pd.read_csv(data_path, storage_options=credentials)
-        return why.log(dataframe).view()
+        return why.log(dataframe)
     elif data_format == "parquet":
         data_dir = Path(data_path)
         profile_list = [
@@ -45,7 +46,7 @@ def _get_profile_view(
                 path, 
                 columns=columns, 
                 storage_options=credentials
-                )).view() for path in data_dir.glob("*.parquet")
+                )) for path in data_dir.glob("*.parquet")
             ]
         return reduce((lambda x, y: x.merge(y)), profile_list)
     else:
@@ -58,7 +59,7 @@ class WhylogsSummaryDriftOperator(BaseOperator):
             *,
             report_html_path: str,
             target_data_path: str,
-            reference_data_path: str,
+            reference_data_path: str,\
             data_format: Optional[str] = "csv",
             columns: Optional[List[str]] = None,
             aws_credentials: Optional[dict] = None,
@@ -73,6 +74,7 @@ class WhylogsSummaryDriftOperator(BaseOperator):
         self.data_format = data_format if data_format in ["csv", "parquet"] else None
         if not self.data_format:
             raise AirflowFailException("Set a valid data_format! Currently accepted formats are ['csv', 'parquet']")
+        
 
     @staticmethod
     def _set_profile_visualization(
@@ -84,20 +86,20 @@ class WhylogsSummaryDriftOperator(BaseOperator):
         return visualization
 
     def execute(self, **kwargs) -> Any:
-        visualization = self._set_profile_visualization(
-            prof_view=_get_profile_view(data_format=self.data_format,
+        prof_view=_get_profile_results(data_format=self.data_format,
                                         data_path=self.target_data_path,
                                         columns=self.columns,
-                                        credentials=self.aws_credentials),
-            prof_view_ref=_get_profile_view(data_format=self.data_format,
+                                        credentials=self.aws_credentials).view()
+        prof_view_ref=_get_profile_results(data_format=self.data_format,
                                             data_path=self.reference_data_path,
                                             columns=self.columns,
-                                            credentials=self.aws_credentials)
-        )
-        visualization.write(
-            rendered_html=visualization.summary_drift_report(),
-            preferred_path=self.report_html_path
-        )
+                                            credentials=self.aws_credentials).view()
+        
+        visualization = self._set_profile_visualization(prof_view=prof_view, prof_view_ref=prof_view_ref)
+        rendered_html = visualization.summary_drift_report()
+
+        visualization.write(rendered_html=rendered_html, preferred_path=self.report_html_path)
+        self.log.info(f"Whylogs' summary drift report successfully written to {self.write_to}")
 
 
 class WhylogsConstraintsOperator(BaseOperator):
@@ -121,12 +123,12 @@ class WhylogsConstraintsOperator(BaseOperator):
         self.aws_credentials = aws_credentials
 
     def execute(self, **kwargs) -> None:
-        profile_view = _get_profile_view(
+        profile_view = _get_profile_results(
             data_format=self.data_format,
             data_path=self.data_path,
             columns=self.columns,
             credentials=self.aws_credentials
-        )
+        ).view()
         builder = ConstraintsBuilder(profile_view)
         builder.add_constraint(self.constraint)
         constraints = builder.build()
@@ -140,7 +142,6 @@ class WhylogsConstraintsOperator(BaseOperator):
         else:
             self.log.info(constraints.report())
         return result
-
 
 
 class WhylogsCustomConstraintsOperator(BaseOperator):
@@ -165,3 +166,33 @@ class WhylogsCustomConstraintsOperator(BaseOperator):
         else:
             self.log.info(self.constraints.report())
         return result
+
+
+class WhylogsProfilingOperator(BaseOperator):
+    def __init__(
+        self,
+        *,
+        data_format: str, 
+        data_path: str, 
+        columns: Optional[str] = None, 
+        credentials: Optional[dict] = None,
+        writer: Optional[str] = "local",
+        **kwargs
+    ):
+        super.__init__(**kwargs)
+        self.data_format = data_format
+        self.data_path = data_path
+        self.columns = columns 
+        self.credentials = credentials
+        self.writer = writer if writer in ["local"] else None
+        if not writer:
+            raise AirflowFailException("Specified writer not yet supported! Available writers are ['local']")
+
+    def execute(self, **kwargs) -> None:
+        profile = _get_profile_results(
+            data_format=self.data_format,
+            data_path=self.data_path,
+            columns=self.columns,
+            credentials=self.credentials
+        )
+        profile.writer(name=self.writer).write()
