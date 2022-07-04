@@ -1,7 +1,9 @@
 data/
 .env/
+.venv/
 .idea/
 __pycache__*
 .DS_Store
 *.pyc
 .ipynb*
+*.whl

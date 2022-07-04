@@ -16,123 +16,113 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from functools import reduce
-from pathlib import Path
-from typing import Any, Optional, List
+from typing import Any, Optional
 
 import pandas as pd
 from airflow.exceptions import AirflowFailException
 from airflow.models import BaseOperator
-import whylogs as why
-from whylogs import DatasetProfileView
-from whylogs.viz import NotebookProfileVisualizer
+from whylogs.viz.extensions.reports.summary_drift import SummaryDriftReport
 from whylogs.core.constraints import ConstraintsBuilder, MetricConstraint, Constraints
 
+from int_airflow.providers.whylogs.utils.whylogs import why_log
+
+# TODO example injecting pandas dataframe
+# TODO example with custom constraint
+# TODO example with simple constraint
 
 
-def _get_profile_results(
-    data_format: str, 
-    data_path: str, 
-    columns: Optional[str] = None, 
-    credentials: Optional[dict] = None
-) -> Optional[DatasetProfileView]:
-    if data_format == "csv":
-        dataframe = pd.read_csv(data_path, storage_options=credentials)
-        return why.log(dataframe)
-    elif data_format == "parquet":
-        data_dir = Path(data_path)
-        profile_list = [
-            why.log(pd.read_parquet(
-                path, 
-                columns=columns, 
-                storage_options=credentials
-                )) for path in data_dir.glob("*.parquet")
-            ]
-        return reduce((lambda x, y: x.merge(y)), profile_list)
-    else:
-        return None
-
-
-class WhylogsSummaryDriftOperator(BaseOperator):
+class BaseWhylogsOperator(BaseOperator):
     def __init__(
             self,
             *,
-            report_html_path: str,
-            target_data_path: str,
-            reference_data_path: str,\
-            data_format: Optional[str] = "csv",
-            columns: Optional[List[str]] = None,
+            data_format: str,
+            data_path: str,
+            columns: Optional[str] = None,
+            writer: Optional[str] = "local",
+            credentials: Optional[dict] = None,
+            dataframe: Optional[pd.DataFrame] = None,
             aws_credentials: Optional[dict] = None,
             **kwargs
     ):
         super().__init__(**kwargs)
-        self.report_html_path = report_html_path
-        self.target_data_path = target_data_path
-        self.reference_data_path = reference_data_path
+        self.data_format = data_format
+        self.data_path = data_path
         self.columns = columns
-        self.aws_credentials = aws_credentials
+        self.credentials = credentials
         self.data_format = data_format if data_format in ["csv", "parquet"] else None
+        self.writer = writer if writer in ["local", "s3"] else None
+        self.dataframe = dataframe
+        self.aws_credentials = aws_credentials
         if not self.data_format:
             raise AirflowFailException("Set a valid data_format! Currently accepted formats are ['csv', 'parquet']")
-        
-
-    @staticmethod
-    def _set_profile_visualization(
-            prof_view: DatasetProfileView,
-            prof_view_ref: DatasetProfileView
-    ):
-        visualization = NotebookProfileVisualizer()
-        visualization.set_profiles(target_profile_view=prof_view, reference_profile_view=prof_view_ref)
-        return visualization
+        if not self.writer:
+            raise AirflowFailException("Set a valid writer! Currently accepted writers are ['local', 's3']")
 
     def execute(self, **kwargs) -> Any:
-        prof_view=_get_profile_results(data_format=self.data_format,
-                                        data_path=self.target_data_path,
-                                        columns=self.columns,
-                                        credentials=self.aws_credentials).view()
-        prof_view_ref=_get_profile_results(data_format=self.data_format,
-                                            data_path=self.reference_data_path,
-                                            columns=self.columns,
-                                            credentials=self.aws_credentials).view()
-        
-        visualization = self._set_profile_visualization(prof_view=prof_view, prof_view_ref=prof_view_ref)
-        rendered_html = visualization.summary_drift_report()
-
-        visualization.write(rendered_html=rendered_html, preferred_path=self.report_html_path)
-        self.log.info(f"Whylogs' summary drift report successfully written to {self.write_to}")
+        pass
 
 
-class WhylogsConstraintsOperator(BaseOperator):
+class WhylogsSummaryDriftOperator(BaseWhylogsOperator):
     def __init__(
             self,
             *,
-            data_path: str,
-            constraint: MetricConstraint,
-            break_pipeline: Optional[bool] = True,
-            data_format: Optional[str] = None,
-            columns: Optional[List[str]] = None,
-            aws_credentials: Optional[dict] = None,
+            target_data_path: str,
+            reference_data_path: str,
             **kwargs
     ):
         super().__init__(**kwargs)
-        self.data_path = data_path
+        self.target_data_path = target_data_path
+        self.reference_data_path = reference_data_path
+
+    def execute(self, **kwargs) -> Any:
+        prof_view = why_log(dataframe=self.dataframe,
+                            data_format=self.data_format,
+                            data_path=self.target_data_path,
+                            columns=self.columns,
+                            credentials=self.aws_credentials).view()
+        prof_view_ref = why_log(dataframe=self.dataframe,
+                                data_format=self.data_format,
+                                data_path=self.reference_data_path,
+                                columns=self.columns,
+                                credentials=self.aws_credentials).view()
+
+        report = SummaryDriftReport(ref_view=prof_view_ref, target_view=prof_view)
+        report.writer(self.writer).write()
+        self.log.info(f"Whylogs' summary drift report successfully written to {self.writer}")
+
+
+class WhylogsConstraintsOperator(BaseWhylogsOperator):
+    def __init__(
+            self,
+            *,
+            constraint: MetricConstraint,
+            constraints: Constraints,
+            break_pipeline: Optional[bool] = True,
+            **kwargs
+    ):
+        super().__init__(**kwargs)
         self.constraint = constraint
-        self.data_format = data_format or "csv"
-        self.columns = columns
+        self.constraints = constraints
         self.break_pipeline = break_pipeline
-        self.aws_credentials = aws_credentials
 
-    def execute(self, **kwargs) -> None:
-        profile_view = _get_profile_results(
-            data_format=self.data_format,
-            data_path=self.data_path,
-            columns=self.columns,
-            credentials=self.aws_credentials
-        ).view()
-        builder = ConstraintsBuilder(profile_view)
-        builder.add_constraint(self.constraint)
-        constraints = builder.build()
+    def _get_or_create_constraints(self):
+        if self.constraints is None:
+            profile_view = why_log(
+                dataframe=self.dataframe,
+                data_format=self.data_format,
+                data_path=self.data_path,
+                columns=self.columns,
+                credentials=self.aws_credentials
+            ).view()
+            builder = ConstraintsBuilder(profile_view)
+            builder.add_constraint(self.constraint)
+            constraints = builder.build()
+            return constraints
+        else:
+            return self.constraints
 
+    def execute(self, **kwargs):
+        constraints = self._get_or_create_constraints()
         result: bool = constraints.validate()
         if result is False and self.break_pipeline:
             self.log.error(constraints.report())
@@ -144,52 +134,13 @@ class WhylogsConstraintsOperator(BaseOperator):
         return result
 
 
-class WhylogsCustomConstraintsOperator(BaseOperator):
-    def __init__(
-            self,
-            *,
-            constraints: Constraints,
-            break_pipeline: Optional[bool] = True,
-            **kwargs
-    ):
+class WhylogsProfilingOperator(BaseWhylogsOperator):
+    def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.constraints = constraints
-        self.break_pipeline = break_pipeline
 
     def execute(self, **kwargs) -> None:
-        result: bool = self.constraints.validate()
-        if result is False and self.break_pipeline:
-            self.log.error(self.constraints.report())
-            raise AirflowFailException("Constraints didn't meet the criteria")
-        elif result is False and not self.break_pipeline:
-            self.log.warning(self.constraints.report())
-        else:
-            self.log.info(self.constraints.report())
-        return result
-
-
-class WhylogsProfilingOperator(BaseOperator):
-    def __init__(
-        self,
-        *,
-        data_format: str, 
-        data_path: str, 
-        columns: Optional[str] = None, 
-        credentials: Optional[dict] = None,
-        writer: Optional[str] = "local",
-        **kwargs
-    ):
-        super.__init__(**kwargs)
-        self.data_format = data_format
-        self.data_path = data_path
-        self.columns = columns 
-        self.credentials = credentials
-        self.writer = writer if writer in ["local"] else None
-        if not writer:
-            raise AirflowFailException("Specified writer not yet supported! Available writers are ['local']")
-
-    def execute(self, **kwargs) -> None:
-        profile = _get_profile_results(
+        profile = why_log(
+            dataframe=self.dataframe,
             data_format=self.data_format,
             data_path=self.data_path,
             columns=self.columns,
