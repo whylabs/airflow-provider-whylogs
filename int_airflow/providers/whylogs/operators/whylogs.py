@@ -24,19 +24,18 @@ from airflow.models import BaseOperator
 from whylogs.viz.extensions.reports.summary_drift import SummaryDriftReport
 from whylogs.core.constraints import ConstraintsBuilder, MetricConstraint, Constraints
 
-from int_airflow.providers.whylogs.utils.whylogs import why_log
-
-# TODO example injecting pandas dataframe
-# TODO example with custom constraint
-# TODO example with simple constraint
+try:
+    from utils.whylogs import why_log
+except ModuleNotFoundError:
+    from int_airflow.providers.whylogs.utils.whylogs import why_log
 
 
 class BaseWhylogsOperator(BaseOperator):
     def __init__(
             self,
             *,
-            data_format: str,
-            data_path: str,
+            data_format: Optional[str] = "csv",
+            data_path: Optional[str] = None,
             columns: Optional[str] = None,
             writer: Optional[str] = "local",
             credentials: Optional[dict] = None,
@@ -66,27 +65,31 @@ class WhylogsSummaryDriftOperator(BaseWhylogsOperator):
     def __init__(
             self,
             *,
-            target_data_path: str,
-            reference_data_path: str,
+            target_data_path: Optional[str] = None,
+            target_data: Optional[pd.DataFrame] = None,
+            reference_data_path: Optional[str] = None,
+            reference_data: Optional[pd.DataFrame] = None,
             **kwargs
     ):
         super().__init__(**kwargs)
         self.target_data_path = target_data_path
+        self.target_data = target_data
         self.reference_data_path = reference_data_path
+        self.reference_data = reference_data
 
     def execute(self, **kwargs) -> Any:
-        prof_view = why_log(dataframe=self.dataframe,
-                            data_format=self.data_format,
-                            data_path=self.target_data_path,
-                            columns=self.columns,
-                            credentials=self.aws_credentials).view()
-        prof_view_ref = why_log(dataframe=self.dataframe,
-                                data_format=self.data_format,
-                                data_path=self.reference_data_path,
-                                columns=self.columns,
-                                credentials=self.aws_credentials).view()
+        target_view = why_log(dataframe=self.target_data,
+                              data_format=self.data_format,
+                              data_path=self.target_data_path,
+                              columns=self.columns,
+                              credentials=self.aws_credentials).view()
+        reference_view = why_log(dataframe=self.reference_data,
+                                 data_format=self.data_format,
+                                 data_path=self.reference_data_path,
+                                 columns=self.columns,
+                                 credentials=self.aws_credentials).view()
 
-        report = SummaryDriftReport(ref_view=prof_view_ref, target_view=prof_view)
+        report = SummaryDriftReport(ref_view=reference_view, target_view=target_view)
         report.writer(self.writer).write()
         self.log.info(f"Whylogs' summary drift report successfully written to {self.writer}")
 
@@ -95,8 +98,8 @@ class WhylogsConstraintsOperator(BaseWhylogsOperator):
     def __init__(
             self,
             *,
-            constraint: MetricConstraint,
-            constraints: Constraints,
+            constraint: Optional[MetricConstraint] = None,
+            constraints: Optional[Constraints] = None,
             break_pipeline: Optional[bool] = True,
             **kwargs
     ):

@@ -11,12 +11,12 @@ multiple_parquet_path = os.path.join(os.getcwd(), "data/parquet_example")
 
 # TODO read from s3
 
-# TODO write to local
-# TODO write to s3
-# TODO write to whylabs
+# TODO dag write to local
+# TODO dag write to s3
+# TODO dag write to whylabs
 
-# TODO test dag execution
-# TODO test path with too many files (local, s3)
+# TODO test dag init arguments
+# TODO test dag on kill
 
 # TODO define edge cases tests
 

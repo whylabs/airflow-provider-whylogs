@@ -7,9 +7,14 @@ from airflow.models.dag import DAG
 from airflow.operators.python import PythonOperator
 import whylogs as why
 from whylogs.core.constraints import MetricConstraint, MetricsSelector, ConstraintsBuilder
-from operators.whylogs import (
-    WhylogsSummaryDriftOperator, WhylogsConstraintsOperator, WhylogsCustomConstraintsOperator
-)
+try:
+    from operators.whylogs import (
+        WhylogsSummaryDriftOperator, WhylogsConstraintsOperator
+    )
+except ModuleNotFoundError:
+    from int_airflow.providers.whylogs.operators.whylogs import (
+        WhylogsSummaryDriftOperator, WhylogsConstraintsOperator
+    )
 
 
 def greater_than_number(column_name, number):
@@ -17,9 +22,9 @@ def greater_than_number(column_name, number):
     constraint_name = f"{column_name} greater than {number}"
 
     constraint = MetricConstraint(
-            name=constraint_name,
-            condition=lambda x: x.min > number,
-            metric_selector=selector
+        name=constraint_name,
+        condition=lambda x: x.min > number,
+        metric_selector=selector
     )
     return constraint
 
@@ -29,9 +34,9 @@ def smaller_than_number(column_name, number):
     constraint_name = f"{column_name} smaller than {number}"
 
     constraint = MetricConstraint(
-            name=constraint_name,
-            condition=lambda x: x.min < number,
-            metric_selector=selector
+        name=constraint_name,
+        condition=lambda x: x.min < number,
+        metric_selector=selector
     )
     return constraint
 
@@ -41,9 +46,9 @@ def mean_between_range(column_name, lower_bound, upper_bound):
     constraint_name = f"{column_name} greater than {lower_bound} and smaller than {upper_bound}"
 
     constraint = MetricConstraint(
-            name=constraint_name,
-            condition=lambda x: lower_bound <= x.avg <= upper_bound,
-            metric_selector=selector
+        name=constraint_name,
+        condition=lambda x: lower_bound <= x.avg <= upper_bound,
+        metric_selector=selector
     )
     return constraint
 
@@ -56,11 +61,11 @@ def mean_between_range_custom(data_path, column_name, lower_bound, upper_bound):
     constraint_name = f"{column_name} greater than {lower_bound} and smaller than {upper_bound}"
 
     constraint = MetricConstraint(
-            name=constraint_name,
-            condition=lambda x: lower_bound <= x.avg <= upper_bound,
-            metric_selector=selector
+        name=constraint_name,
+        condition=lambda x: lower_bound <= x.avg <= upper_bound,
+        metric_selector=selector
     )
-    
+
     builder = ConstraintsBuilder(profile_view)
     builder.add_constraint(constraint)
     constraints = builder.build()
@@ -80,6 +85,12 @@ def pull_args(**kwargs):
     logging.info(ls)
     return ls
 
+
+def read_my_dataframe():
+    df = pd.read_csv("data/raw_data.csv")
+    return df
+
+
 with DAG(
         dag_id='whylabs_example_dag',
         schedule_interval=None,
@@ -87,7 +98,6 @@ with DAG(
         max_active_runs=1,
         tags=['responsible', 'data_transformation'],
 ) as dag:
-
     my_transformation = PythonOperator(
         task_id="my_transformation",
         python_callable=my_transformation
@@ -120,10 +130,10 @@ with DAG(
         columns=["col_2"]
     )
 
-    mean_custom = WhylogsCustomConstraintsOperator(
+    mean_custom = WhylogsConstraintsOperator(
         task_id="mean_custom",
         constraints=mean_between_range_custom(
-            data_path="data/raw_data.csv", 
+            data_path="data/raw_data.csv",
             column_name="a",
             lower_bound=0.0,
             upper_bound=10.3
@@ -133,13 +143,12 @@ with DAG(
 
     summary_drift = WhylogsSummaryDriftOperator(
         task_id="drift_report",
-        report_html_path="data/example_drift_report",
         target_data_path="data/transformed_data.csv",
-        reference_data_path="data/transformed_data.csv"
+        reference_data=read_my_dataframe()
     )
 
     python_print = PythonOperator(
-        task_id = "python_print",
+        task_id="python_print",
         python_callable=pull_args,
         provide_context=True,
     )
