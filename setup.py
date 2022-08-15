@@ -17,10 +17,8 @@ setuptools.setup(
     url="https://github.com/great-expectations/airflow-provider-great-expectations",
     install_requires=[
         "apache-airflow>=2.1",
-        "whylogs>=1.0.0",
-        "pandas",
-        "fsspec",
-        "s3fs"
+        "whylogs>=1.0.10",
+        "whylogs[viz]"
     ],
     packages=[
         "whylogs_provider",

@@ -6,74 +6,29 @@ import pandas as pd
 from airflow.models.dag import DAG
 from airflow.operators.python import PythonOperator
 import whylogs as why
-from whylogs.core.constraints import MetricConstraint, MetricsSelector, ConstraintsBuilder
-try:
-    from operators.whylogs import (
-        WhylogsSummaryDriftOperator, WhylogsConstraintsOperator
-    )
-except ModuleNotFoundError:
-    from int_airflow.providers.whylogs.operators.whylogs import (
-        WhylogsSummaryDriftOperator, WhylogsConstraintsOperator
-    )
+from whylogs.core.constraints.factories import (
+    greater_than_number,
+    mean_between_range,
 
 
-def greater_than_number(column_name, number):
-    selector = MetricsSelector(metric_name='distribution', column_name=column_name)
-    constraint_name = f"{column_name} greater than {number}"
-
-    constraint = MetricConstraint(
-        name=constraint_name,
-        condition=lambda x: x.min > number,
-        metric_selector=selector
-    )
-    return constraint
+)
+from operators.whylogs import (
+    WhylogsSummaryDriftOperator, WhylogsConstraintsOperator
+)
+# except ModuleNotFoundError:
+#     from int_airflow.providers.whylogs.operators.whylogs import (
+#         WhylogsSummaryDriftOperator, WhylogsConstraintsOperator
+#     )
 
 
-def smaller_than_number(column_name, number):
-    selector = MetricsSelector(metric_name='distribution', column_name=column_name)
-    constraint_name = f"{column_name} smaller than {number}"
-
-    constraint = MetricConstraint(
-        name=constraint_name,
-        condition=lambda x: x.min < number,
-        metric_selector=selector
-    )
-    return constraint
-
-
-def mean_between_range(column_name, lower_bound, upper_bound):
-    selector = MetricsSelector(metric_name='distribution', column_name=column_name)
-    constraint_name = f"{column_name} greater than {lower_bound} and smaller than {upper_bound}"
-
-    constraint = MetricConstraint(
-        name=constraint_name,
-        condition=lambda x: lower_bound <= x.avg <= upper_bound,
-        metric_selector=selector
-    )
-    return constraint
-
-
-def mean_between_range_custom(data_path, column_name, lower_bound, upper_bound):
+def profile_data(data_path="data/transformed_data.csv"):
     df = pd.read_csv(data_path)
-    profile_view = why.log(pandas=df).view()
-
-    selector = MetricsSelector(metric_name='distribution', column_name=column_name)
-    constraint_name = f"{column_name} greater than {lower_bound} and smaller than {upper_bound}"
-
-    constraint = MetricConstraint(
-        name=constraint_name,
-        condition=lambda x: lower_bound <= x.avg <= upper_bound,
-        metric_selector=selector
-    )
-
-    builder = ConstraintsBuilder(profile_view)
-    builder.add_constraint(constraint)
-    constraints = builder.build()
-    return constraints
+    result = why.log(df)
+    result.writer("local").write(dest="data/profile.bin")
 
 
-def my_transformation(input_path="data/raw_data.csv"):
-    logging.info(f"Current wd is {os.getcwd()}")
+def transform_data(input_path="data/raw_data.csv"):
+    logging.debug(f"Current wd is {os.getcwd()}")
     input_data = pd.read_csv(input_path)
     clean_df = input_data.dropna(axis=0)
     clean_df.to_csv("data/transformed_data.csv")
@@ -98,61 +53,41 @@ with DAG(
         max_active_runs=1,
         tags=['responsible', 'data_transformation'],
 ) as dag:
-    my_transformation = PythonOperator(
+
+    transform_data = PythonOperator(
         task_id="my_transformation",
-        python_callable=my_transformation
+        python_callable=transform_data
+    )
+
+    profile_data = PythonOperator(
+        task_id="profile_data",
+        python_callable=profile_data
     )
 
     greater_than_check_a = WhylogsConstraintsOperator(
         task_id="greater_than_check_a",
-        data_path="data/raw_data.csv",  # "s3://test-airflow-operator/raw_data.csv",
+        profile_path="data/profile.bin",
         constraint=greater_than_number(column_name="a", number=0),
-        data_format="csv",
-        # aws_credentials={
-        #     "key": "my_access_key_id",
-        #     "secret": "my_access_key"
-        # }
     )
     greater_than_check_b = WhylogsConstraintsOperator(
         task_id="greater_than_check_b",
-        data_path="data/parquet_example",
-        constraint=greater_than_number(column_name="col_2", number=0),
-        data_format="parquet",
-        columns=["col_2"]
+        profile_path="data/profile.bin",
+        constraint=greater_than_number(column_name="b", number=0),
     )
 
     avg_between_b = WhylogsConstraintsOperator(
         task_id="avg_between_b",
-        data_path="data/parquet_example",
+        profile_path="data/profile.bin",
         break_pipeline=False,
-        constraint=mean_between_range(column_name="col_2", lower_bound=0.0, upper_bound=125.1261236210),
-        data_format="parquet",
-        columns=["col_2"]
-    )
-
-    mean_custom = WhylogsConstraintsOperator(
-        task_id="mean_custom",
-        constraints=mean_between_range_custom(
-            data_path="data/raw_data.csv",
-            column_name="a",
-            lower_bound=0.0,
-            upper_bound=10.3
-        ),
-        break_pipeline=False
+        constraint=mean_between_range(column_name="b", lower=0.0, upper=125.1261236210),
     )
 
     summary_drift = WhylogsSummaryDriftOperator(
         task_id="drift_report",
-        target_data_path="data/transformed_data.csv",
-        reference_data=read_my_dataframe()
+        target_profile_path="data/profile.bin",
+        reference_profile_path="data/profile.bin",
+        reader="local",
+        write_report_path="data/Profile.html"
     )
 
-    python_print = PythonOperator(
-        task_id="python_print",
-        python_callable=pull_args,
-        provide_context=True,
-    )
-
-    my_transformation >> [greater_than_check_a, greater_than_check_b, avg_between_b, mean_custom]
-    greater_than_check_a >> python_print
-    [greater_than_check_a, greater_than_check_b, avg_between_b] >> summary_drift
+    transform_data >> profile_data >> [greater_than_check_a, greater_than_check_b, avg_between_b] >> summary_drift
