@@ -1,24 +1,25 @@
-import os
-from datetime import datetime
+""" 
+Example DAG with whylogs provider
+
+You will need `pandas` installed on your environment to be able to run this example. 
+We are also using a dataset locally, which might not be suited for production use-cases.
+"""
+
+# TODO bring data/ directory in and make it acessible on the DAG
+
 import logging
+from datetime import datetime
 
 import pandas as pd
+import whylogs as why
+from whylogs.core.constraints.factories import greater_than_number, mean_between_range
+
 from airflow.models.dag import DAG
 from airflow.operators.python import PythonOperator
-import whylogs as why
-from whylogs.core.constraints.factories import (
-    greater_than_number,
-    mean_between_range,
-
-
+from whylogs_provider.operators.whylogs import (
+    WhylogsConstraintsOperator,
+    WhylogsSummaryDriftOperator,
 )
-from operators.whylogs import (
-    WhylogsSummaryDriftOperator, WhylogsConstraintsOperator
-)
-# except ModuleNotFoundError:
-#     from int_airflow.providers.whylogs.operators.whylogs import (
-#         WhylogsSummaryDriftOperator, WhylogsConstraintsOperator
-#     )
 
 
 def profile_data(data_path="data/transformed_data.csv"):
@@ -28,7 +29,6 @@ def profile_data(data_path="data/transformed_data.csv"):
 
 
 def transform_data(input_path="data/raw_data.csv"):
-    logging.debug(f"Current wd is {os.getcwd()}")
     input_data = pd.read_csv(input_path)
     clean_df = input_data.dropna(axis=0)
     clean_df.to_csv("data/transformed_data.csv")
@@ -47,22 +47,16 @@ def read_my_dataframe():
 
 
 with DAG(
-        dag_id='whylabs_example_dag',
-        schedule_interval=None,
-        start_date=datetime.now(),
-        max_active_runs=1,
-        tags=['responsible', 'data_transformation'],
+    dag_id='whylabs_example_dag',
+    schedule_interval=None,
+    start_date=datetime.now(),
+    max_active_runs=1,
+    tags=['responsible', 'data_transformation'],
 ) as dag:
 
-    transform_data = PythonOperator(
-        task_id="my_transformation",
-        python_callable=transform_data
-    )
+    transform_data = PythonOperator(task_id="my_transformation", python_callable=transform_data)
 
-    profile_data = PythonOperator(
-        task_id="profile_data",
-        python_callable=profile_data
-    )
+    profile_data = PythonOperator(task_id="profile_data", python_callable=profile_data)
 
     greater_than_check_a = WhylogsConstraintsOperator(
         task_id="greater_than_check_a",
@@ -87,7 +81,12 @@ with DAG(
         target_profile_path="data/profile.bin",
         reference_profile_path="data/profile.bin",
         reader="local",
-        write_report_path="data/Profile.html"
+        write_report_path="data/Profile.html",
     )
 
-    transform_data >> profile_data >> [greater_than_check_a, greater_than_check_b, avg_between_b] >> summary_drift
+    (
+        transform_data
+        >> profile_data
+        >> [greater_than_check_a, greater_than_check_b, avg_between_b]
+        >> summary_drift
+    )
