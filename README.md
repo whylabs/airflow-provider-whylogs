@@ -1,12 +1,12 @@
 # whylogs Airflow Operator
 
-This is a package for the [whylogs](https://github.com/whylabs/whylogs) provider, an open source library for logging any kind of data. With whylogs, users are able to generate summaries of their datasets (called whylogs profiles) which they can use to:
+This is a package for the [whylogs](https://github.com/whylabs/whylogs) provider, the open source standard for data and ML logging. With whylogs, users are able to generate summaries of their datasets (called whylogs profiles) which they can use to:
 
 - Track changes in their dataset
 - Create data constraints to know whether their data looks the way it should
 - Quickly visualize key summary statistics about their datasets
 
-This operator focuses on simplifying whylogs' usage along with Airflow. Users are encouraged to benefit from their existing Data Profiles, which are created with whylogs and can bring a lot of value and visibility to track their data changes over time.  
+This Airflow operator focuses on simplifying whylogs' usage along with Airflow. Users are encouraged to benefit from their existing Data Profiles, which are created with whylogs and can bring a lot of value and visibility to track their data changes over time.  
  
 ## Installation
 
