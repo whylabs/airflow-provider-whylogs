@@ -8,12 +8,9 @@ dev-setup: ## Prepares a fresh development environment
 test: ## Runs necessary tests on the current environment
 	. .venv/bin/activate && py.test tests/
 	
-dist: test  ## Tests the code and builds the package with the version described on ./VERSION
+dist:  ## Builds the package with the version described on ./VERSION
 	rm -rf dist/
 	python3 -m build .
-
-publish: dist ## Makes fresh distributions and publishes to PyPI 
-	twine upload dist/*
 
 help: 
 	@python -c "$$PRINT_HELP_PYSCRIPT" < $(MAKEFILE_LIST)
