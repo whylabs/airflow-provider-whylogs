@@ -33,7 +33,7 @@ In order to benefir from the existing operators, users will have to profile thei
 import whylogs as why
 
 df = pd.read_csv("some_file.csv")
-results = why.log(pandas=df)
+results = why.log(df)
 results.writer("local").write()
 ```
 
@@ -57,10 +57,12 @@ summary_drift = WhylogsSummaryDriftOperator(
 
 ```python
 from whylogs_provider.operators.whylogs import WhylogsConstraintsOperator
+from whylogs.core.constraints.factories import greater_than_number
 
 constraints = WhylogsConstraintsOperator(
         task_id="constraints_check",
         profile_path="data/profile.bin",
+        reader="local",
         constraint=greater_than_number(column_name="my_column", number=0.0),
     )
 ```
@@ -75,8 +77,8 @@ The current requirements to use this Airflow Provider are described on the table
 
 | PIP package        | Version required |
 |--------------------|------------------|
-| ``apache-airflow`` | ``>=2.2.0``      |
-| ``whylogs[viz]``   | ``>=1.0.10``     |
+| ``apache-airflow`` | ``>=2.0``      |
+| ``whylogs[viz, s3]``   | ``>=1.0.10``     |
 
 ## Contributing
 

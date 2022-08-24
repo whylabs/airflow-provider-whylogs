@@ -12,3 +12,4 @@ __pycache__*
 */settings.json
 .whl
 *tar.gz
+*.egg-info

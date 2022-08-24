@@ -1,17 +1,18 @@
 dev-setup: ## Prepares a fresh development environment 
-	python3 -m venv .venv 
-	source .venv/bin/activate
-	pip3 install -rq requirements.txt
+	( \
+	   python3 -m venv .venv; \
+       source .venv/bin/activate; \
+	   pip install -q -r requirements.txt; \
+	)
 
 test: ## Runs necessary tests on the current environment
-	py.test tests/ -vv
-
+	. .venv/bin/activate && py.test tests/
+	
 dist: test  ## Tests the code and builds the package with the version described on ./VERSION
 	rm -rf dist/
 	python3 -m build .
 
-publish: ## Makes fresh distributions and publishes to PyPI
-	dist 
+publish: dist ## Makes fresh distributions and publishes to PyPI 
 	twine upload dist/*
 
 help: 
