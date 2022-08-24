@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 
 from whylogs.api.logger.result_set import ResultSetReader
 from whylogs.core.constraints import Constraints, ConstraintsBuilder
-from whylogs.viz.extensions.reports.html_report import HTMLReportWriter
+from whylogs.viz import SummaryDriftReport
 
 from airflow.exceptions import AirflowFailException
 from whylogs_provider.operators.whylogs import (
@@ -18,9 +18,9 @@ WRITE_REPORT_PATH = "some/file.html"
 
 
 class TestWhylogsSummaryDriftOperator(TestCase):
-    @patch.object(HTMLReportWriter, "write")
+    @patch.object(SummaryDriftReport, "writer")
     @patch.object(ResultSetReader, "read")
-    def test_execute(self, mock_read, mock_write):
+    def test_execute(self, mock_read, mock_writer):
 
         op = WhylogsSummaryDriftOperator(
             task_id=TASK_ID,
@@ -32,7 +32,7 @@ class TestWhylogsSummaryDriftOperator(TestCase):
         op.execute()
         mock_read.assert_called_with(path=PROFILE_PATH)
         self.assertEqual(mock_read.call_count, 2)
-        mock_write.assert_called_once_with(dest=WRITE_REPORT_PATH)
+        mock_writer.assert_called_once()
 
 
 class TestWhylogsConstraintsOperator(TestCase):
