@@ -8,12 +8,16 @@ dev-setup: ## Prepares a fresh development environment
 test: ## Runs necessary tests on the current environment
 	. .venv/bin/activate && py.test tests/
 	
-dist:  ## Builds the package with the version described on ./VERSION
+dist: clean  ## Builds the package with the version described on ./VERSION
 	( \
-		rm -rf dist/; \
 		. .venv/bin/activate; \
 		python3 -m build .; \
 	)
+
+clean:  ## Cleans the environment and dist packages
+	rm -rf airflow_provider_whylogs.egg-info
+	rm -rf .pytest_cache
+	rm -rf dist
 
 help: 
 	@python -c "$$PRINT_HELP_PYSCRIPT" < $(MAKEFILE_LIST)
