@@ -20,10 +20,12 @@ jobs:
         python-version: '3.8'
 
     - name: Install dependencies
-      run: make dev-setup
+      run: |
+        make dev-setup
 
     - name: Build package
-      run: make dist
+      run: | 
+        make dist
 
     - name: Publish a Python distribution to PyPI
       uses: pypa/gh-action-pypi-publish@release/v1
