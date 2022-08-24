@@ -5,8 +5,6 @@ You will need `pandas` installed on your environment to be able to run this exam
 We are also using a dataset locally, which might not be suited for production use-cases.
 """
 
-# TODO bring data/ directory in and make it acessible on the DAG
-
 import logging
 from datetime import datetime
 

@@ -1,4 +1,5 @@
 data/
+!whylogs_provider/example_dags/data
 .env/
 .venv/
 .idea/
@@ -9,3 +10,5 @@ __pycache__*
 *.whl
 .vscode/
 */settings.json
+.whl
+*tar.gz

@@ -1,3 +1,4 @@
+import whylogs_provider
 import setuptools
 
 with open("README.md", "r") as fh:
@@ -5,7 +6,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="airflow-provider-whylogs",
-    version="0.0.1",
+    version=whylogs_provider.__version__,
     author="WhyLabs.ai",
     description="An Apache Airflow provider for whylogs",
     entry_points="""
