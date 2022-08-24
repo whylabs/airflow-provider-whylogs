@@ -76,7 +76,6 @@ The current requirements to use this Airflow Provider are described on the table
 | PIP package        | Version required |
 |--------------------|------------------|
 | ``apache-airflow`` | ``>=2.2.0``      |
-| ``whylogs``        | ``>=1.0.10``     |
 | ``whylogs[viz]``   | ``>=1.0.10``     |
 
 ## Contributing
