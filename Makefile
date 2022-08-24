@@ -1,7 +1,7 @@
 dev-setup: ## Prepares a fresh development environment 
 	( \
 	   python3 -m venv .venv; \
-       source .venv/bin/activate; \
+       . .venv/bin/activate; \
 	   pip install -q -r requirements.txt; \
 	)
 
@@ -9,8 +9,10 @@ test: ## Runs necessary tests on the current environment
 	. .venv/bin/activate && py.test tests/
 	
 dist:  ## Builds the package with the version described on ./VERSION
-	rm -rf dist/
-	python3 -m build .
+	( \
+		rm -rf dist/; \
+		python3 -m build .; \
+	)
 
 help: 
 	@python -c "$$PRINT_HELP_PYSCRIPT" < $(MAKEFILE_LIST)
