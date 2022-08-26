@@ -13,14 +13,14 @@ This Airflow operator focuses on simplifying whylogs' usage along with Airflow. 
 You can install this package on top of an existing Airflow 2.0+ installation ([Requirements](#requirements)) by simply running:
 
 ```bash
-$ pip install apache-airflow-providers-whylogs
+$ pip install airflow-provider-whylogs
 ```
 
 To install this provider from source, run these instead:
 
 ```bash
-$ git clone git@github.com:whylabs/apache-airflow-providers-whylogs.git
-$ cd apache-airflow-providers-whylogs
+$ git clone git@github.com:whylabs/airflow-provider-whylogs.git
+$ cd airflow-provider-whylogs
 $ python3 -m venv .env && source .env/bin/activate
 $ pip3 install -e .
 ```
@@ -67,9 +67,9 @@ constraints = WhylogsConstraintsOperator(
     )
 ```
 
->>**NOTE**: It is important to note that even though it is possible to create a Dataset Profile with the Python Operator, Airflow tries to separate the concern of orchestration from processing, so that is one of the reasons why we didn't want to have a strong opinion on how to read data and profile it, enabling users to best adjust this step to their existing scenario.
+>**NOTE**: It is important to note that even though it is possible to create a Dataset Profile with the Python Operator, Airflow tries to separate the concern of orchestration from processing, so that is one of the reasons why we didn't want to have a strong opinion on how to read data and profile it, enabling users to best adjust this step to their existing scenario.
 
-A full DAG example can be found on the whylogs_provider package [directory](./whylogs_provider/example_dags/dag_whylabs.py).  
+A full DAG example can be found on the whylogs_provider package [directory](https://github.com/whylabs/airflow-provider-whylogs/tree/mainline/whylogs_provider/example_dags).  
 
 ## Requirements
 
