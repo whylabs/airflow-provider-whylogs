@@ -11,7 +11,7 @@ setuptools.setup(
     description="An Apache Airflow provider for whylogs",
     entry_points="""
         [apache_airflow_provider]
-        provider_info=airflow_whylogs.__init__:get_provider_info
+        provider_info=whylogs_provider.__init__:get_provider_info
     """,
     long_description=long_description,
     long_description_content_type="text/markdown",
