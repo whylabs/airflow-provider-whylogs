@@ -15,7 +15,7 @@ setuptools.setup(
     """,
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/whylabs/whylogs",
+    url="https://github.com/whylabs/airflow-provider-whylogs",
     install_requires=[
         "apache-airflow>=2.0",
         "whylogs[viz, s3]>=1.0.10"
