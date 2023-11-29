@@ -3,5 +3,5 @@ def get_provider_info():
         "package-name": "airflow-provider-whylogs",
         "name": "whylogs Provider",
         "description": "An Apache Airflow provider for whylogs.",
-        "versions": ["0.0.1"],
+        "versions": ["0.0.3"],
     }
