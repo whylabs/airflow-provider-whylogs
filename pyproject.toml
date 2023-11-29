@@ -1,0 +1,7 @@
+[tool.pyright]
+include = ["whylogs_container"]
+typeCheckingMode = "strict"
+
+reportMissingTypeStubs = false
+reportMissingParameterType = false
+reportMissingTypeArgumet = false

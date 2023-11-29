@@ -21,7 +21,6 @@ class TestWhylogsSummaryDriftOperator(TestCase):
     @patch.object(SummaryDriftReport, "writer")
     @patch.object(ResultSetReader, "read")
     def test_execute(self, mock_read, mock_writer):
-
         op = WhylogsSummaryDriftOperator(
             task_id=TASK_ID,
             write_report_path=WRITE_REPORT_PATH,
@@ -29,7 +28,7 @@ class TestWhylogsSummaryDriftOperator(TestCase):
             target_profile_path=PROFILE_PATH,
         )
 
-        op.execute()
+        op.execute(context=None)
         mock_read.assert_called_with(path=PROFILE_PATH)
         self.assertEqual(mock_read.call_count, 2)
         mock_writer.assert_called_once()
@@ -43,11 +42,17 @@ class TestWhylogsConstraintsOperator(TestCase):
     @patch.object(ConstraintsBuilder, "add_constraint")
     @patch("whylogs.core.constraints.factories.greater_than_number")
     @patch.object(ResultSetReader, "read")
-    def test_execute_with_builtin_constraints(self, mock_read, mock_constraint, mock_add, mock_build):
+    def test_execute_with_builtin_constraints(
+        self, mock_read, mock_constraint, mock_add, mock_build
+    ):
         op = WhylogsConstraintsOperator(
-            task_id=TASK_ID, profile_path=PROFILE_PATH, constraint=mock_constraint, constraints=None, reader="local"
+            task_id=TASK_ID,
+            profile_path=PROFILE_PATH,
+            constraint=mock_constraint,
+            constraints=None,
+            reader="local",
         )
-        op.execute()
+        op.execute(context=None)
         mock_read.assert_called_once_with(path=PROFILE_PATH)
         mock_add.assert_called_once_with(mock_constraint)
         mock_build.assert_called_once()
@@ -58,9 +63,11 @@ class TestWhylogsConstraintsOperator(TestCase):
         self.mock_custom_constraints.report = MagicMock(return_value="a passing report")
 
         op = WhylogsConstraintsOperator(
-            task_id=TASK_ID, profile_path=PROFILE_PATH, constraints=self.mock_custom_constraints
+            task_id=TASK_ID,
+            profile_path=PROFILE_PATH,
+            constraints=self.mock_custom_constraints,
         )
-        result = op.execute()
+        result = op.execute(context=None)
         self.mock_custom_constraints.validate.assert_called_once()
         self.mock_custom_constraints.report.assert_called_once()
         self.assertEqual(result, True)
@@ -77,12 +84,14 @@ class TestWhylogsConstraintsOperator(TestCase):
             constraints=self.mock_custom_constraints,
         )
 
-        result = op.execute()
+        result = op.execute(context=None)
 
         self.mock_custom_constraints.validate.assert_called_once()
         self.mock_custom_constraints.report.assert_called_once()
         self.assertEqual(result, False)
-        mock_log.assert_called_with("a failing report")
+        mock_log.assert_called_with(
+            "Constraint check failed with report: a failing report"
+        )
 
     @patch("logging.Logger.error")
     def test_execute_with_break_pipeline(self, mock_error):
@@ -96,5 +105,7 @@ class TestWhylogsConstraintsOperator(TestCase):
             constraints=self.mock_custom_constraints,
             break_pipeline=True,
         )
-        self.assertRaises(AirflowFailException, op.execute)
-        mock_error.assert_called_with("a failing report")
+        self.assertRaises(AirflowFailException, lambda: op.execute(context=None))
+        mock_error.assert_called_with(
+            "Constraint check failed with report: a failing report"
+        )
