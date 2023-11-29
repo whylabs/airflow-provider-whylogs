@@ -8,6 +8,13 @@ dev-setup: ## Prepares a fresh development environment
 test: ## Runs necessary tests on the current environment
 	. .venv/bin/activate && py.test tests/
 	
+
+lint: ## Runs linter on the current environment
+	( \
+		. .venv/bin/activate; \
+		python3 -m pyright; \
+	)
+
 dist: clean  ## Builds the package with the version described on ./VERSION
 	( \
 		. .venv/bin/activate; \
