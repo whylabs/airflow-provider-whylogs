@@ -1,11 +1,11 @@
-from typing import Any, Optional
+from typing import Any, Optional, Sequence
 
 import whylogs as why
 from whylogs.core.constraints import Constraints, ConstraintsBuilder, MetricConstraint
 from whylogs.viz.extensions.reports.summary_drift import SummaryDriftReport
-
 from airflow.exceptions import AirflowFailException
 from airflow.models import BaseOperator
+from airflow.utils.context import Context
 
 
 class WhylogsSummaryDriftOperator(BaseOperator):
@@ -26,15 +26,21 @@ class WhylogsSummaryDriftOperator(BaseOperator):
         Report
     :type write_report_path: str
 
-    :param reader: The desired whylogs profile reader to choose from. Learn about the existing readers on 
+    :param reader: The desired whylogs profile reader to choose from. Learn about the existing readers on
         [our docs](https://whylogs.readthedocs.io/en/latest/index.html). Defaults to "local"
     :type reader: Optional, str
 
-    :param writer: The desired whylogs profile writer to choose from. Learn about the existing writers on 
+    :param writer: The desired whylogs profile writer to choose from. Learn about the existing writers on
         [our docs](https://whylogs.readthedocs.io/en/latest/index.html). Defaults to "local".
     :type writer:  Optional, str
 
     """
+
+    template_fields: Sequence[str] = (
+        "target_profile_path",
+        "reference_profile_path",
+        "write_report_path",
+    )
 
     def __init__(
         self,
@@ -42,27 +48,42 @@ class WhylogsSummaryDriftOperator(BaseOperator):
         target_profile_path: str,
         reference_profile_path: str,
         write_report_path: str,
-        reader: Optional[str] = "local",
-        writer: Optional[str] = "local",
-        **kwargs,
+        reader: str = "local",
+        writer: str = "local",
+        **kwargs: Any,
     ):
-        super().__init__(**kwargs)
+        super().__init__(**kwargs)  # pyright: ignore
         self.target_profile_path = target_profile_path
         self.reference_profile_path = reference_profile_path
         self.write_report_path = write_report_path
         self.reader = reader
         self.writer = writer
 
-    def execute(self, **kwargs) -> Any:
-        reference_view = why.reader(self.reader).read(path=self.reference_profile_path).view()
+    def execute(self, context: Context, **kwargs: Any) -> Any:
+        reference_view = (
+            why.reader(self.reader).read(path=self.reference_profile_path).view()
+        )
         target_view = why.reader(self.reader).read(path=self.target_profile_path).view()
+
+        if not reference_view:
+            self.log.error(
+                f"Reference profile not found at {self.reference_profile_path}"
+            )
+            raise AirflowFailException()
+        if not target_view:
+            self.log.error(f"Target profile not found at {self.target_profile_path}")
+            raise AirflowFailException()
 
         report = SummaryDriftReport(ref_view=reference_view, target_view=target_view)
         report.writer(self.writer).write(dest=self.write_report_path)
-        self.log.info(f"Whylogs' summary drift report successfully written to {self.writer}")
+        self.log.info(
+            f"Whylogs' summary drift report successfully written to {self.writer}"
+        )
 
 
 class WhylogsConstraintsOperator(BaseOperator):
+    template_fields: Sequence[str] = "profile_path"
+
     """
     Creates a whylogs' Constraints report from a `Constraints` object or by using our pre-defined 
     constraint factories, as the example below shows.
@@ -154,14 +175,14 @@ class WhylogsConstraintsOperator(BaseOperator):
     def __init__(
         self,
         *,
-        profile_path: Optional[str] = None,
-        reader: Optional[str] = None,
+        profile_path: str,
+        reader: str = "local",
         constraint: Optional[MetricConstraint] = None,
         constraints: Optional[Constraints] = None,
         break_pipeline: Optional[bool] = False,
-        **kwargs,
+        **kwargs: Any,
     ):
-        super().__init__(**kwargs)
+        super().__init__(**kwargs)  # pyright: ignore
         self.profile_path = profile_path
         self.reader = reader
         self.constraint = constraint
@@ -169,23 +190,36 @@ class WhylogsConstraintsOperator(BaseOperator):
         self.break_pipeline = break_pipeline
 
     def _get_or_create_constraints(self):
-        if self.constraints is None:
-            profile_view = why.reader(self.reader).read(path=self.profile_path).view()
-            builder = ConstraintsBuilder(profile_view)
-            builder.add_constraint(self.constraint)
-            constraints = builder.build()
-            return constraints
-        else:
+        if self.constraints is not None:
             return self.constraints
 
-    def execute(self, **kwargs):
+        profile_view = why.reader(self.reader).read(path=self.profile_path).view()
+        if profile_view is None:
+            self.log.error(f"Profile not found at {self.profile_path}")
+            raise AirflowFailException()
+
+        builder = ConstraintsBuilder(profile_view)
+        if self.constraint is None:
+            self.log.error("You must define a constraint or a constraints suite")
+            raise AirflowFailException()
+
+        builder.add_constraint(self.constraint)
+        constraints = builder.build()
+
+        return constraints
+
+    def execute(self, context: Context, **kwargs: Any):
         constraints = self._get_or_create_constraints()
         result: bool = constraints.validate()
         if result is False and self.break_pipeline:
-            self.log.error(constraints.report())
+            self.log.error(
+                f"Constraint check failed with report: {constraints.report()}"
+            )
             raise AirflowFailException("Constraints didn't meet the criteria")
         elif result is False and not self.break_pipeline:
-            self.log.warning(constraints.report())
+            self.log.warning(
+                f"Constraint check failed with report: {constraints.report()}"
+            )
         else:
             self.log.info(constraints.report())
         return result
