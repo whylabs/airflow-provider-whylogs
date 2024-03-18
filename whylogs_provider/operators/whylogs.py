@@ -208,7 +208,7 @@ class WhylogsConstraintsOperator(BaseOperator):
 
         return constraints
 
-    def execute(self, context: Context, **kwargs: Any):
+    def execute(self, context: Context, **kwargs: Any) -> bool:
         constraints = self._get_or_create_constraints()
         result: bool = constraints.validate()
         if result is False and self.break_pipeline:
@@ -223,3 +223,4 @@ class WhylogsConstraintsOperator(BaseOperator):
         else:
             self.log.info(constraints.report())
         return result
+
